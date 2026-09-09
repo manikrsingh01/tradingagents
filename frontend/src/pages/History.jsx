@@ -1,13 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { History, FileText, ChevronRight, Download } from 'lucide-react';
 
-export default function HistoryPage() {
+export default function HistoryPage({ authToken }) {
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedReport, setSelectedReport] = useState(null);
 
   useEffect(() => {
-    fetch('https://tradingagents-dg06.onrender.com/api/history')
+    fetch(`${import.meta.env.VITE_API_URL || ''}/api/history`, {
+      headers: { 'Authorization': `Bearer ${authToken}` }
+    })
       .then(res => res.json())
       .then(data => {
         if (data.status === 'success') {
@@ -23,9 +25,12 @@ export default function HistoryPage() {
 
   const handleViewReport = async (path) => {
     try {
-      const res = await fetch('https://tradingagents-dg06.onrender.com/api/history/view', {
+      const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/history/view`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}` 
+        },
         body: JSON.stringify({ path })
       });
       const data = await res.json();

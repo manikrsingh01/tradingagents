@@ -1,22 +1,191 @@
 import json
 import os
+import threading
+import smtplib
+from functools import wraps
 from pathlib import Path
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from email.mime.application import MIMEApplication
 
+import markdown
+from markdown_pdf import MarkdownPdf, Section
 from dotenv import load_dotenv, set_key
 from flask import Flask, Response, jsonify, request
 from flask_cors import CORS
 
 from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.graph.trading_graph import TradingAgentsGraph
+from tradingagents.reporting import write_report_tree
 
 load_dotenv('.env', override=True)
 
 app = Flask(__name__)
 CORS(app)
 
-# Removed duplicate cancel_analysis route
+CANCEL_FLAG = False
+
+PROVIDER_MODEL_MAP = {
+    "deepseek": {
+        "provider": "deepseek",
+        "quick": "deepseek-chat",
+        "deep": "deepseek-reasoner",
+        "backend_url": "https://api.deepseek.com"
+    },
+    "openai": {
+        "provider": "openai",
+        "quick": "gpt-5.6-luna",
+        "deep": "gpt-5.6",
+        "backend_url": "https://api.openai.com/v1"
+    },
+    "google": {
+        "provider": "google",
+        "quick": "gemini-3.5-flash",
+        "deep": "gemini-3.5-flash",
+        "backend_url": None
+    },
+    "anthropic": {
+        "provider": "anthropic",
+        "quick": "claude-sonnet-5",
+        "deep": "claude-sonnet-5",
+        "backend_url": "https://api.anthropic.com/"
+    }
+}
+
+
+
+def send_email_report(ticker, date_str, summary_text, master_report_markdown=None):
+    smtp_email = os.environ.get("SMTP_EMAIL")
+    smtp_password = os.environ.get("SMTP_PASSWORD")
+    
+    if not smtp_email or not smtp_password:
+        print("Email credentials not found. Skipping email report.")
+        return
+        
+    try:
+        msg = MIMEMultipart()
+        msg['From'] = smtp_email
+        msg['To'] = 'hello@manikumarsingh.com'
+        msg['Subject'] = f"Trading Agents Analysis: {ticker} ({date_str})"
+        
+        # Convert summary markdown to HTML for email body
+        summary_html = markdown.markdown(summary_text) if summary_text else "<p>Analysis completed successfully.</p>"
+        
+        # Stylized HTML Email Body with Emerald theme
+        body_html = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <style>
+            body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #0d1117; color: #e6edf3; padding: 20px; }}
+            .container {{ max-width: 650px; margin: 0 auto; background-color: #161b22; border-radius: 12px; border: 1px solid #30363d; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.5); }}
+            .header {{ background: linear-gradient(135deg, #064e3b 0%, #047857 50%, #10b981 100%); padding: 24px; text-align: center; }}
+            .header h1 {{ margin: 0; color: #ffffff; font-size: 22px; font-weight: 700; letter-spacing: 0.5px; }}
+            .header p {{ margin: 6px 0 0 0; color: #d1fae5; font-size: 14px; }}
+            .content {{ padding: 24px; color: #c9d1d9; line-height: 1.6; font-size: 14px; }}
+            .summary-box {{ background-color: #0d1117; border-left: 4px solid #10b981; border-radius: 6px; padding: 16px 20px; margin: 16px 0; border: 1px solid #21262d; border-left-width: 4px; }}
+            .summary-box h1, .summary-box h2, .summary-box h3 {{ color: #10b981; margin-top: 0; font-size: 16px; }}
+            .summary-box p {{ margin-bottom: 8px; color: #e6edf3; }}
+            .summary-box strong {{ color: #34d399; }}
+            .attachment-pill {{ display: inline-flex; align-items: center; background-color: #064e3b; color: #a7f3d0; border: 1px solid #059669; padding: 10px 16px; border-radius: 8px; font-size: 13px; font-weight: 600; margin: 16px 0; }}
+            .footer {{ border-top: 1px solid #21262d; padding: 16px 24px; text-align: center; font-size: 12px; color: #8b949e; background-color: #0d1117; }}
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="header">
+              <h1>Trading Agents Analysis Report</h1>
+              <p>Asset: <strong>{ticker}</strong> | Date: <strong>{date_str}</strong></p>
+            </div>
+            <div class="content">
+              <p>Hello,</p>
+              <p>The autonomous Trading Agents evaluation for <strong>{ticker}</strong> has concluded. Here is the executive investment verdict:</p>
+              
+              <div class="summary-box">
+                {summary_html}
+              </div>
+              
+              <div class="attachment-pill">
+                📎 Full Master Report Attached as PDF (Trading_Agents_Report_{ticker}_{date_str}.pdf)
+              </div>
+              
+              <p>The attached PDF contains the comprehensive, multi-agent analysis including Fundamental Analysis, Market Sentiment, Technical Indicators, and Risk Management debate records.</p>
+              <p>You can also review all past reports directly on your web dashboard in the <strong>History</strong> tab.</p>
+            </div>
+            <div class="footer">
+              Sent automatically by your Trading Agents System • Confidential Research
+            </div>
+          </div>
+        </body>
+        </html>
+        """
+        msg.attach(MIMEText(body_html, 'html'))
+        
+        # Convert Markdown to PDF (Full Master Report, fallback to summary_text)
+        report_text_for_pdf = master_report_markdown if (master_report_markdown and len(master_report_markdown.strip()) > 0) else summary_text
+        
+        pdf = MarkdownPdf(toc_level=2)
+        pdf.add_section(Section(report_text_for_pdf))
+        
+        pdf_path = f"Trading_Agents_Report_{ticker}_{date_str}.pdf"
+        pdf.save(pdf_path)
+        
+        # Attach the PDF
+        with open(pdf_path, "rb") as f:
+            pdf_attachment = MIMEApplication(f.read(), _subtype="pdf")
+            pdf_attachment.add_header('Content-Disposition', 'attachment', filename=pdf_path)
+            msg.attach(pdf_attachment)
+            
+        # Clean up the temporary PDF file
+        if os.path.exists(pdf_path):
+            os.remove(pdf_path)
+        
+        server = smtplib.SMTP('smtp.gmail.com', 587)
+        server.starttls()
+        server.login(smtp_email, smtp_password)
+        server.send_message(msg)
+        server.quit()
+        print(f"Successfully sent email report with PDF attachment to hello@manikumarsingh.com for {ticker}")
+    except Exception as e:
+        print(f"Failed to send email: {e}")
+
+
+def require_auth(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        # Allow OPTIONS requests to pass through for CORS
+        if request.method == 'OPTIONS':
+            return f(*args, **kwargs)
+            
+        app_password = os.environ.get('APP_PASSWORD')
+        if not app_password:
+            return f(*args, **kwargs) # Auth disabled if no password set
+
+        auth_header = request.headers.get('Authorization')
+        if not auth_header or not auth_header.startswith('Bearer '):
+            return jsonify({'error': 'Unauthorized'}), 401
+            
+        token = auth_header.split(' ')[1]
+        if token != app_password:
+            return jsonify({'error': 'Unauthorized'}), 401
+            
+        return f(*args, **kwargs)
+    return decorated
+
+@app.route('/api/login', methods=['POST'])
+def login():
+    data = request.json
+    password = data.get('password')
+    app_password = os.environ.get('APP_PASSWORD')
+    
+    if not app_password or password == app_password:
+        # For a single master password, returning success is sufficient.
+        return jsonify({'status': 'success'})
+    
+    return jsonify({'error': 'Invalid password'}), 401
 
 @app.route('/api/settings', methods=['GET', 'POST'])
+@require_auth
 def manage_settings():
     env_path = '.env'
     if request.method == 'GET':
@@ -25,13 +194,16 @@ def manage_settings():
             'google': os.environ.get('GOOGLE_API_KEY', ''),
             'anthropic': os.environ.get('ANTHROPIC_API_KEY', ''),
             'groq': os.environ.get('GROQ_API_KEY', ''),
-            'openai': os.environ.get('OPENAI_API_KEY', '')
+            'openai': os.environ.get('OPENAI_API_KEY', ''),
+            'deepseek': os.environ.get('DEEPSEEK_API_KEY', '')
         }
         # Mask keys for security
         for k, v in keys.items():
             if v and len(v) > 8:
                 keys[k] = v[:4] + '...' + v[-4:]
-        return jsonify({"status": "success", "keys": keys})
+                
+        active_model = os.environ.get('ACTIVE_MODEL', 'openai')
+        return jsonify({"status": "success", "keys": keys, "active_model": active_model})
 
     elif request.method == 'POST':
         data = request.json
@@ -48,12 +220,30 @@ def manage_settings():
             if data.get('openai') and '...' not in data['openai']:
                 set_key(env_path, 'OPENAI_API_KEY', data['openai'])
                 os.environ['OPENAI_API_KEY'] = data['openai']
+            if data.get('deepseek') and '...' not in data['deepseek']:
+                set_key(env_path, 'DEEPSEEK_API_KEY', data['deepseek'])
+                os.environ['DEEPSEEK_API_KEY'] = data['deepseek']
+                
+            if data.get('active_model'):
+                chosen_model = data['active_model'].strip("'\"").lower()
+                set_key(env_path, 'ACTIVE_MODEL', chosen_model)
+                os.environ['ACTIVE_MODEL'] = chosen_model
+                set_key(env_path, 'TRADINGAGENTS_LLM_PROVIDER', chosen_model)
+                os.environ['TRADINGAGENTS_LLM_PROVIDER'] = chosen_model
+                if chosen_model in PROVIDER_MODEL_MAP:
+                    mapping = PROVIDER_MODEL_MAP[chosen_model]
+                    set_key(env_path, 'TRADINGAGENTS_QUICK_THINK_LLM', mapping['quick'])
+                    set_key(env_path, 'TRADINGAGENTS_DEEP_THINK_LLM', mapping['deep'])
+                    os.environ['TRADINGAGENTS_QUICK_THINK_LLM'] = mapping['quick']
+                    os.environ['TRADINGAGENTS_DEEP_THINK_LLM'] = mapping['deep']
+
 
             return jsonify({"status": "success"})
         except Exception as e:
             return jsonify({"error": str(e)}), 500
 
 @app.route('/api/history', methods=['GET'])
+@require_auth
 def get_history():
     try:
         results_dir = Path(DEFAULT_CONFIG.get("results_dir", "reports"))
@@ -62,40 +252,38 @@ def get_history():
             for filepath in results_dir.rglob("*.md"):
                 # Path format: reports / FOLDER_NAME / report.md (e.g. 1_analysts/market.md)
                 # The topmost folder inside reports is the run folder
+                # Only include the master report
+                if filepath.name != "complete_report.md":
+                    continue
+                    
                 rel_path = filepath.relative_to(results_dir)
                 parts = rel_path.parts
 
                 if len(parts) >= 2:
                     folder_name = parts[0]
-                    # folder_name format: YYYYMMDD_HHMMSS_TICKER or YYYY-MM-DD_TICKER
+                    # folder_name format: YYYY-MM-DD_TICKER
                     if "_" in folder_name:
                         date_str, ticker_raw = folder_name.split("_", 1)
                     else:
                         date_str = folder_name
                         ticker_raw = folder_name
 
-                    # Build nice display name based on subfolder structure
-                    report_type = parts[-1].replace(".md", "")
-                    if len(parts) > 2:
-                        category = parts[-2].split("_", 1)[-1].title()
-                        report_type = f"{category} - {report_type.title()}"
-                    elif report_type == "complete_report":
-                        report_type = "Complete Report"
-
-                    name = f"{date_str} - {ticker_raw.upper()} ({report_type})"
+                    # User requested clean Master Report name
+                    name = f"{date_str} - {ticker_raw.upper()} (Master Report)"
 
                     reports.append({
                         "name": name,
                         "path": str(filepath),
                         "date": folder_name
                     })
-        # Sort by date descending
+        # Sort by date descending (latest to oldest)
         reports.sort(key=lambda x: x["date"], reverse=True)
         return jsonify({"status": "success", "reports": reports})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/history/view', methods=['POST'])
+@require_auth
 def view_history():
     try:
         path = request.json.get('path')
@@ -109,18 +297,21 @@ def view_history():
 
 
 @app.route('/api/clear_cache', methods=['POST'])
+@require_auth
 def clear_cache():
     global CANCEL_FLAG
     CANCEL_FLAG = True
     return jsonify({"status": "success", "message": "Backend reset signal sent"})
 
 @app.route('/api/cancel', methods=['POST'])
+@require_auth
 def cancel_analysis():
     global CANCEL_FLAG
     CANCEL_FLAG = True
     return jsonify({"status": "cancelled"})
 
 @app.route('/api/analyze', methods=['POST'])
+@require_auth
 def analyze():
     global CANCEL_FLAG
     CANCEL_FLAG = False
@@ -148,6 +339,17 @@ def analyze():
                 current_analysts.remove('fundamentals')
 
             custom_config = DEFAULT_CONFIG.copy()
+            active_model = os.environ.get('ACTIVE_MODEL', 'deepseek').strip("'\"").lower()
+            custom_config['llm_provider'] = active_model
+            os.environ['TRADINGAGENTS_LLM_PROVIDER'] = active_model
+            
+            if active_model in PROVIDER_MODEL_MAP:
+                mapping = PROVIDER_MODEL_MAP[active_model]
+                custom_config['quick_think_llm'] = mapping['quick']
+                custom_config['deep_think_llm'] = mapping['deep']
+                if mapping.get('backend_url'):
+                    custom_config['backend_url'] = mapping['backend_url']
+            
             if research_depth == 'medium':
                 custom_config['max_debate_rounds'] = 3
                 custom_config['max_risk_discuss_rounds'] = 3
@@ -203,27 +405,34 @@ def analyze():
 
                     yield f"data: {json.dumps({'status': 'node_finished', 'node': node_name})}\n\n"
 
+
             # Extract final summary at the end using accumulated state
             summary_text = "The TradingAgents framework successfully evaluated the asset. The full detailed report is saved locally."
 
             # Save the final report to disk
+            master_report_content = ""
             try:
-                from pathlib import Path
-
-                from tradingagents.reporting import write_report_tree
-
                 # Format folder as date_ticker (since country is implied in ticker suffix or NSEI)
                 folder_name = f"{trade_date}_{ticker.replace('^', '')}"
                 results_dir = Path(DEFAULT_CONFIG.get("results_dir", "reports"))
                 save_path = results_dir / folder_name
-                write_report_tree(final_state, ticker, save_path)
+                report_file = write_report_tree(final_state, ticker, save_path)
+                if report_file and Path(report_file).exists():
+                    master_report_content = Path(report_file).read_text(encoding="utf-8")
             except Exception as e:
                 print(f"Error saving report: {e}")
 
             if "risk_debate_state" in final_state and isinstance(final_state["risk_debate_state"], dict):
                 summary_text = final_state["risk_debate_state"].get("judge_decision", summary_text)
-            elif "trader_investment_plan" in final_state:
+            if "trader_investment_plan" in final_state:
                 summary_text = final_state["trader_investment_plan"]
+                
+            # Spawn background thread to send email
+            threading.Thread(
+                target=send_email_report, 
+                args=(ticker, trade_date, summary_text, master_report_content), 
+                daemon=True
+            ).start()
 
             yield f"data: {json.dumps({'status': 'completed', 'summary': summary_text})}\n\n"
 

@@ -1,0 +1,47 @@
+name: Daily Morning NSE Analysis (9:10 AM IST)
+
+on:
+  schedule:
+    # 03:40 UTC = 09:10 IST (UTC + 5:30), Monday through Friday
+    - cron: '40 3 * * 1-5'
+  workflow_dispatch:
+    inputs:
+      ticker:
+        description: 'Asset/Index Ticker (e.g. ^NSEI for Nifty 50, RELIANCE.NS, TCS.NS)'
+        required: true
+        default: '^NSEI'
+
+jobs:
+  analyze-and-report:
+    name: Run Trading Agents Analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -e .
+
+      - name: Run Multi-Agent Analysis & Deliver Email Report
+        env:
+          ACTIVE_MODEL: ${{ secrets.ACTIVE_MODEL || 'deepseek' }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ALPHA_VANTAGE_API_KEY: ${{ secrets.ALPHA_VANTAGE_API_KEY }}
+          SMTP_EMAIL: ${{ secrets.SMTP_EMAIL }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+        run: |
+          TARGET="${{ github.event.inputs.ticker || '^NSEI' }}"
+          python cron_analysis.py "$TARGET"

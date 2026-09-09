@@ -1,24 +1,30 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, Save, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Settings, Save, CheckCircle2, AlertCircle, Eye, EyeOff } from 'lucide-react';
 
-export default function SettingsPage() {
+export default function SettingsPage({ authToken }) {
   const [keys, setKeys] = useState({
     google: '',
     anthropic: '',
     groq: '',
-    openai: ''
+    openai: '',
+    deepseek: ''
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState(null);
+  const [showKeys, setShowKeys] = useState(false);
+  const [activeModel, setActiveModel] = useState('openai');
 
   useEffect(() => {
     // Fetch current keys (masked) from backend
-    fetch('https://tradingagents-dg06.onrender.com/api/settings')
+    fetch(`${import.meta.env.VITE_API_URL || ''}/api/settings`, {
+      headers: { 'Authorization': `Bearer ${authToken}` }
+    })
       .then(res => res.json())
       .then(data => {
         if (data.status === 'success') {
           setKeys(data.keys);
+          if (data.active_model) setActiveModel(data.active_model);
         }
         setLoading(false);
       })
@@ -34,10 +40,13 @@ export default function SettingsPage() {
     setMessage(null);
 
     try {
-      const res = await fetch('https://tradingagents-dg06.onrender.com/api/settings', {
+      const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/settings`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(keys)
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`
+        },
+        body: JSON.stringify({ ...keys, active_model: activeModel })
       });
       const data = await res.json();
       
@@ -57,7 +66,10 @@ export default function SettingsPage() {
   const handleClearCache = async () => {
     try {
       setMessage(null);
-      await fetch('https://tradingagents-dg06.onrender.com/api/clear_cache', { method: 'POST' });
+      await fetch(`${import.meta.env.VITE_API_URL || ''}/api/clear_cache`, { 
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${authToken}` }
+      });
       setMessage({ type: 'success', text: 'Backend cache cleared and processes reset successfully.' });
     } catch (err) {
       setMessage({ type: 'error', text: 'Failed to clear cache.' });
@@ -78,9 +90,32 @@ export default function SettingsPage() {
       <form onSubmit={handleSave} style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
         
         <div className="input-group">
+          <label className="input-label" htmlFor="active_model">Active Model</label>
+          <select 
+            id="active_model" 
+            className="glass-input" 
+            value={activeModel}
+            onChange={(e) => setActiveModel(e.target.value)}
+          >
+            <option value="openai">OpenAI (GPT-4)</option>
+            <option value="anthropic">Anthropic (Claude 3.5)</option>
+            <option value="groq">Groq (Llama 3)</option>
+            <option value="deepseek">DeepSeek (V3)</option>
+            <option value="gemini">Google Gemini</option>
+          </select>
+        </div>
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '-1rem' }}>
+          <button type="button" onClick={() => setShowKeys(!showKeys)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+            {showKeys ? <EyeOff size={16} /> : <Eye size={16} />}
+            {showKeys ? 'Hide Keys' : 'Show Keys'}
+          </button>
+        </div>
+
+        <div className="input-group">
           <label className="input-label" htmlFor="openai">OpenAI API Key</label>
           <input
-            type="password"
+            type={showKeys ? "text" : "password"}
             id="openai"
             className="glass-input"
             value={keys.openai}
@@ -88,11 +123,23 @@ export default function SettingsPage() {
             placeholder="sk-..."
           />
         </div>
+        
+        <div className="input-group">
+          <label className="input-label" htmlFor="deepseek">DeepSeek API Key</label>
+          <input
+            type={showKeys ? "text" : "password"}
+            id="deepseek"
+            className="glass-input"
+            value={keys.deepseek}
+            onChange={(e) => setKeys({...keys, deepseek: e.target.value})}
+            placeholder="sk-..."
+          />
+        </div>
 
         <div className="input-group">
           <label className="input-label" htmlFor="anthropic">Anthropic API Key</label>
           <input
-            type="password"
+            type={showKeys ? "text" : "password"}
             id="anthropic"
             className="glass-input"
             value={keys.anthropic}
@@ -102,26 +149,26 @@ export default function SettingsPage() {
         </div>
 
         <div className="input-group">
-          <label className="input-label" htmlFor="google">Google API Key (Gemini)</label>
-          <input
-            type="password"
-            id="google"
-            className="glass-input"
-            value={keys.google}
-            onChange={(e) => setKeys({...keys, google: e.target.value})}
-            placeholder="AIza..."
-          />
-        </div>
-
-        <div className="input-group">
           <label className="input-label" htmlFor="groq">Groq API Key</label>
           <input
-            type="password"
+            type={showKeys ? "text" : "password"}
             id="groq"
             className="glass-input"
             value={keys.groq}
             onChange={(e) => setKeys({...keys, groq: e.target.value})}
             placeholder="gsk_..."
+          />
+        </div>
+
+        <div className="input-group">
+          <label className="input-label" htmlFor="google">Google/Gemini API Key</label>
+          <input
+            type={showKeys ? "text" : "password"}
+            id="google"
+            className="glass-input"
+            value={keys.google}
+            onChange={(e) => setKeys({...keys, google: e.target.value})}
+            placeholder="AIza..."
           />
         </div>
 
