@@ -9,6 +9,7 @@ with an executive verdict in the body and the full Master Report PDF attached.
 import os
 import sys
 from datetime import datetime
+from pathlib import Path
 
 try:
     from zoneinfo import ZoneInfo
@@ -17,17 +18,16 @@ except ImportError:
 
 from dotenv import load_dotenv
 
-load_dotenv(".env", override=True)
-
 from api_server import PROVIDER_MODEL_MAP, send_email_report
 from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.graph.trading_graph import TradingAgentsGraph
 from tradingagents.reporting import write_report_tree
-from pathlib import Path
 
 
 def run_morning_analysis(ticker: str = "^NSEI"):
+    load_dotenv(".env", override=True)
     # Determine current trade date in IST (Indian Standard Time)
+
     try:
         ist = ZoneInfo("Asia/Kolkata")
         trade_date = datetime.now(ist).strftime("%Y-%m-%d")

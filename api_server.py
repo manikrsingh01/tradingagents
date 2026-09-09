@@ -1,18 +1,18 @@
 import json
 import os
-import threading
 import smtplib
+import threading
+from email.mime.application import MIMEApplication
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 from functools import wraps
 from pathlib import Path
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
-from email.mime.application import MIMEApplication
 
 import markdown
-from markdown_pdf import MarkdownPdf, Section
 from dotenv import load_dotenv, set_key
 from flask import Flask, Response, jsonify, request
 from flask_cors import CORS
+from markdown_pdf import MarkdownPdf, Section
 
 from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.graph.trading_graph import TradingAgentsGraph
@@ -57,20 +57,20 @@ PROVIDER_MODEL_MAP = {
 def send_email_report(ticker, date_str, summary_text, master_report_markdown=None):
     smtp_email = os.environ.get("SMTP_EMAIL")
     smtp_password = os.environ.get("SMTP_PASSWORD")
-    
+
     if not smtp_email or not smtp_password:
         print("Email credentials not found. Skipping email report.")
         return
-        
+
     try:
         msg = MIMEMultipart()
         msg['From'] = smtp_email
         msg['To'] = 'hello@manikumarsingh.com'
         msg['Subject'] = f"Trading Agents Analysis: {ticker} ({date_str})"
-        
+
         # Convert summary markdown to HTML for email body
         summary_html = markdown.markdown(summary_text) if summary_text else "<p>Analysis completed successfully.</p>"
-        
+
         # Stylized HTML Email Body with Emerald theme
         body_html = f"""
         <!DOCTYPE html>
@@ -100,18 +100,19 @@ def send_email_report(ticker, date_str, summary_text, master_report_markdown=Non
             <div class="content">
               <p>Hello,</p>
               <p>The autonomous Trading Agents evaluation for <strong>{ticker}</strong> has concluded. Here is the executive investment verdict:</p>
-              
+
               <div class="summary-box">
                 {summary_html}
               </div>
-              
+
               <div class="attachment-pill">
                 📎 Full Master Report Attached as PDF (Trading_Agents_Report_{ticker}_{date_str}.pdf)
               </div>
-              
+
               <p>The attached PDF contains the comprehensive, multi-agent analysis including Fundamental Analysis, Market Sentiment, Technical Indicators, and Risk Management debate records.</p>
               <p>You can also review all past reports directly on your web dashboard in the <strong>History</strong> tab.</p>
             </div>
+
             <div class="footer">
               Sent automatically by your Trading Agents System • Confidential Research
             </div>
@@ -120,26 +121,26 @@ def send_email_report(ticker, date_str, summary_text, master_report_markdown=Non
         </html>
         """
         msg.attach(MIMEText(body_html, 'html'))
-        
+
         # Convert Markdown to PDF (Full Master Report, fallback to summary_text)
         report_text_for_pdf = master_report_markdown if (master_report_markdown and len(master_report_markdown.strip()) > 0) else summary_text
-        
+
         pdf = MarkdownPdf(toc_level=2)
         pdf.add_section(Section(report_text_for_pdf))
-        
+
         pdf_path = f"Trading_Agents_Report_{ticker}_{date_str}.pdf"
         pdf.save(pdf_path)
-        
+
         # Attach the PDF
         with open(pdf_path, "rb") as f:
             pdf_attachment = MIMEApplication(f.read(), _subtype="pdf")
             pdf_attachment.add_header('Content-Disposition', 'attachment', filename=pdf_path)
             msg.attach(pdf_attachment)
-            
+
         # Clean up the temporary PDF file
         if os.path.exists(pdf_path):
             os.remove(pdf_path)
-        
+
         server = smtplib.SMTP('smtp.gmail.com', 587)
         server.starttls()
         server.login(smtp_email, smtp_password)
@@ -156,7 +157,7 @@ def require_auth(f):
         # Allow OPTIONS requests to pass through for CORS
         if request.method == 'OPTIONS':
             return f(*args, **kwargs)
-            
+
         app_password = os.environ.get('APP_PASSWORD')
         if not app_password:
             return f(*args, **kwargs) # Auth disabled if no password set
@@ -164,11 +165,11 @@ def require_auth(f):
         auth_header = request.headers.get('Authorization')
         if not auth_header or not auth_header.startswith('Bearer '):
             return jsonify({'error': 'Unauthorized'}), 401
-            
+
         token = auth_header.split(' ')[1]
         if token != app_password:
             return jsonify({'error': 'Unauthorized'}), 401
-            
+
         return f(*args, **kwargs)
     return decorated
 
@@ -177,11 +178,11 @@ def login():
     data = request.json
     password = data.get('password')
     app_password = os.environ.get('APP_PASSWORD')
-    
+
     if not app_password or password == app_password:
         # For a single master password, returning success is sufficient.
         return jsonify({'status': 'success'})
-    
+
     return jsonify({'error': 'Invalid password'}), 401
 
 @app.route('/api/settings', methods=['GET', 'POST'])
@@ -201,7 +202,7 @@ def manage_settings():
         for k, v in keys.items():
             if v and len(v) > 8:
                 keys[k] = v[:4] + '...' + v[-4:]
-                
+
         active_model = os.environ.get('ACTIVE_MODEL', 'openai')
         return jsonify({"status": "success", "keys": keys, "active_model": active_model})
 
@@ -223,7 +224,7 @@ def manage_settings():
             if data.get('deepseek') and '...' not in data['deepseek']:
                 set_key(env_path, 'DEEPSEEK_API_KEY', data['deepseek'])
                 os.environ['DEEPSEEK_API_KEY'] = data['deepseek']
-                
+
             if data.get('active_model'):
                 chosen_model = data['active_model'].strip("'\"").lower()
                 set_key(env_path, 'ACTIVE_MODEL', chosen_model)
@@ -255,7 +256,7 @@ def get_history():
                 # Only include the master report
                 if filepath.name != "complete_report.md":
                     continue
-                    
+
                 rel_path = filepath.relative_to(results_dir)
                 parts = rel_path.parts
 
@@ -342,14 +343,14 @@ def analyze():
             active_model = os.environ.get('ACTIVE_MODEL', 'deepseek').strip("'\"").lower()
             custom_config['llm_provider'] = active_model
             os.environ['TRADINGAGENTS_LLM_PROVIDER'] = active_model
-            
+
             if active_model in PROVIDER_MODEL_MAP:
                 mapping = PROVIDER_MODEL_MAP[active_model]
                 custom_config['quick_think_llm'] = mapping['quick']
                 custom_config['deep_think_llm'] = mapping['deep']
                 if mapping.get('backend_url'):
                     custom_config['backend_url'] = mapping['backend_url']
-            
+
             if research_depth == 'medium':
                 custom_config['max_debate_rounds'] = 3
                 custom_config['max_risk_discuss_rounds'] = 3
@@ -426,11 +427,11 @@ def analyze():
                 summary_text = final_state["risk_debate_state"].get("judge_decision", summary_text)
             if "trader_investment_plan" in final_state:
                 summary_text = final_state["trader_investment_plan"]
-                
+
             # Spawn background thread to send email
             threading.Thread(
-                target=send_email_report, 
-                args=(ticker, trade_date, summary_text, master_report_content), 
+                target=send_email_report,
+                args=(ticker, trade_date, summary_text, master_report_content),
                 daemon=True
             ).start()
 
