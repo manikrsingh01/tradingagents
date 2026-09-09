@@ -16,8 +16,9 @@ import logging
 import random
 import re
 import time
+from collections.abc import Callable
 from functools import wraps
-from typing import TypeVar, Callable
+from typing import TypeVar
 
 logger = logging.getLogger(__name__)
 
@@ -86,7 +87,7 @@ def _is_rate_limit_error(exc: Exception) -> bool:
     """Return True if the exception is a rate-limit / quota error."""
     msg = str(exc).lower()
     type_name = type(exc).__name__
-    
+
     # Google sometimes tarpits the IP and drops the connection at the TLS
     # or socket layer when quota is exceeded, instead of returning a 429.
     is_tarpit_timeout = type_name in ("ReadTimeout", "ConnectTimeout", "TimeoutException") or \

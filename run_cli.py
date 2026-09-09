@@ -1,5 +1,6 @@
-import pexpect
 import sys
+
+import pexpect
 
 print("Starting TradingAgents via pexpect...")
 # Run tradingagents using the virtual environment

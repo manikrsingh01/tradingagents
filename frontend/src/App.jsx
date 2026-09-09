@@ -89,7 +89,7 @@ function App() {
     abortController.current = new AbortController();
 
     try {
-      const response = await fetch('/api/analyze', {
+      const response = await fetch('https://tradingagents-dg06.onrender.com/api/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ticker: formattedTicker, trade_date: tradeDate, research_depth: researchDepth, asset_type: assetType }),
@@ -162,7 +162,7 @@ function App() {
       abortController.current.abort();
       
       try {
-        await fetch('/api/cancel', { method: 'POST' });
+        await fetch('https://tradingagents-dg06.onrender.com/api/cancel', { method: 'POST' });
       } catch (e) {
         console.error("Failed to cancel backend", e);
       }

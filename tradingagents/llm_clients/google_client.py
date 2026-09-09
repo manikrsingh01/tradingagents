@@ -1,7 +1,12 @@
-import os
 import logging
 from typing import Any
-from pydantic import Field
+
+from langchain_google_genai import ChatGoogleGenerativeAI
+
+from .base_client import BaseLLMClient, normalize_content
+from .rate_limit_wrapper import rate_limit_retry
+from .validators import validate_model
+
 
 # The Google SDK emits a warning about Automatic Function Calling (AFC) that
 # breaks the rich.Live terminal dashboard layout. Suppress it here.
@@ -9,13 +14,8 @@ class _SuppressAFCWarning(logging.Filter):
     def filter(self, record):
         return "Direct use of automatic function calling (AFC)" not in record.getMessage()
 
+
 logging.getLogger("google_genai.models").addFilter(_SuppressAFCWarning())
-
-from langchain_google_genai import ChatGoogleGenerativeAI
-
-from .base_client import BaseLLMClient, normalize_content
-from .rate_limit_wrapper import rate_limit_retry
-from .validators import validate_model
 
 
 class NormalizedChatGoogleGenerativeAI(ChatGoogleGenerativeAI):

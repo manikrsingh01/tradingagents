@@ -7,7 +7,7 @@ export default function HistoryPage() {
   const [selectedReport, setSelectedReport] = useState(null);
 
   useEffect(() => {
-    fetch('/api/history')
+    fetch('https://tradingagents-dg06.onrender.com/api/history')
       .then(res => res.json())
       .then(data => {
         if (data.status === 'success') {
@@ -23,7 +23,7 @@ export default function HistoryPage() {
 
   const handleViewReport = async (path) => {
     try {
-      const res = await fetch('/api/history/view', {
+      const res = await fetch('https://tradingagents-dg06.onrender.com/api/history/view', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ path })

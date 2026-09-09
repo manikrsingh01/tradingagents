@@ -14,7 +14,7 @@ export default function SettingsPage() {
 
   useEffect(() => {
     // Fetch current keys (masked) from backend
-    fetch('/api/settings')
+    fetch('https://tradingagents-dg06.onrender.com/api/settings')
       .then(res => res.json())
       .then(data => {
         if (data.status === 'success') {
@@ -34,7 +34,7 @@ export default function SettingsPage() {
     setMessage(null);
 
     try {
-      const res = await fetch('/api/settings', {
+      const res = await fetch('https://tradingagents-dg06.onrender.com/api/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(keys)
@@ -57,7 +57,7 @@ export default function SettingsPage() {
   const handleClearCache = async () => {
     try {
       setMessage(null);
-      await fetch('/api/clear_cache', { method: 'POST' });
+      await fetch('https://tradingagents-dg06.onrender.com/api/clear_cache', { method: 'POST' });
       setMessage({ type: 'success', text: 'Backend cache cleared and processes reset successfully.' });
     } catch (err) {
       setMessage({ type: 'error', text: 'Failed to clear cache.' });
