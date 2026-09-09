@@ -261,6 +261,27 @@ class MessageBuffer:
 
 message_buffer = MessageBuffer()
 
+import logging
+import re
+
+class _UIRateLimitHandler(logging.Handler):
+    def emit(self, record):
+        msg = record.getMessage()
+        if not message_buffer.current_agent:
+            return
+            
+        if "Rate limited" in msg:
+            # Try to extract the wait time, e.g. "Waiting 30s before retry..."
+            m = re.search(r"Waiting (\d+)s", msg)
+            if m:
+                status_str = f"rate_limited:{m.group(1)}s"
+            else:
+                status_str = "rate_limited"
+            message_buffer.update_agent_status(message_buffer.current_agent, status_str)
+        elif "Resuming API call" in msg:
+            message_buffer.update_agent_status(message_buffer.current_agent, "in_progress")
+
+logging.getLogger("tradingagents.llm_clients.rate_limit_wrapper").addHandler(_UIRateLimitHandler())
 
 def create_layout():
     layout = Layout()
@@ -340,6 +361,13 @@ def update_display(layout, spinner_text=None, stats_handler=None, start_time=Non
         if status == "in_progress":
             spinner = Spinner(
                 "dots", text="[blue]in_progress[/blue]", style="bold cyan"
+            )
+            status_cell = spinner
+        elif status.startswith("rate_limited"):
+            # Parse out the waiting time if present, default to just "rate_limited"
+            text_disp = status.replace("rate_limited:", "waiting ") if ":" in status else "rate_limited"
+            spinner = Spinner(
+                "dots", text=f"[yellow]{text_disp}[/yellow]", style="bold yellow"
             )
             status_cell = spinner
         else:

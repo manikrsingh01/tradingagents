@@ -1,8 +1,20 @@
+import os
+import logging
 from typing import Any
+from pydantic import Field
+
+# The Google SDK emits a warning about Automatic Function Calling (AFC) that
+# breaks the rich.Live terminal dashboard layout. Suppress it here.
+class _SuppressAFCWarning(logging.Filter):
+    def filter(self, record):
+        return "Direct use of automatic function calling (AFC)" not in record.getMessage()
+
+logging.getLogger("google_genai.models").addFilter(_SuppressAFCWarning())
 
 from langchain_google_genai import ChatGoogleGenerativeAI
 
 from .base_client import BaseLLMClient, normalize_content
+from .rate_limit_wrapper import rate_limit_retry
 from .validators import validate_model
 
 
@@ -11,10 +23,13 @@ class NormalizedChatGoogleGenerativeAI(ChatGoogleGenerativeAI):
 
     Gemini 3 models return content as list of typed blocks.
     This normalizes to string for consistent downstream handling.
+    Rate-limit errors (429 RESOURCE_EXHAUSTED) are retried with
+    intelligent backoff that reads Google's retryDelay header.
     """
 
     def invoke(self, input, config=None, **kwargs):
-        return normalize_content(super().invoke(input, config, **kwargs))
+        _invoke = rate_limit_retry(super().invoke)
+        return normalize_content(_invoke(input, config, **kwargs))
 
 
 class GoogleClient(BaseLLMClient):
@@ -30,6 +45,10 @@ class GoogleClient(BaseLLMClient):
 
         if self.base_url:
             llm_kwargs["base_url"] = self.base_url
+
+        # Enforce a default 120s timeout so the client never hangs infinitely
+        # if Google silently drops the connection.
+        llm_kwargs["timeout"] = 120.0
 
         for key in ("timeout", "max_retries", "temperature", "max_output_tokens",
                     "callbacks", "http_client", "http_async_client"):

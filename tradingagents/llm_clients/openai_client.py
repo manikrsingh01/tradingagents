@@ -10,6 +10,7 @@ from langchain_openai import ChatOpenAI
 from .api_key_env import get_api_key_env
 from .base_client import BaseLLMClient, normalize_content
 from .capabilities import get_capabilities
+from .rate_limit_wrapper import rate_limit_retry
 from .validators import validate_model
 
 
@@ -30,10 +31,14 @@ class NormalizedChatOpenAI(ChatOpenAI):
     Provider-specific quirks beyond structured-output (e.g. DeepSeek's
     reasoning_content roundtrip) live in subclasses so this base class
     stays small.
+
+    Rate-limit errors (429, 413 TPM exceeded) are retried with
+    intelligent backoff that reads Retry-After headers.
     """
 
     def invoke(self, input, config=None, **kwargs):
-        return normalize_content(super().invoke(input, config, **kwargs))
+        _invoke = rate_limit_retry(super().invoke)
+        return normalize_content(_invoke(input, config, **kwargs))
 
     def with_structured_output(self, schema, *, method=None, **kwargs):
         caps = get_capabilities(self.model_name)
