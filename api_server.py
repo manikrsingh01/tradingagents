@@ -203,7 +203,7 @@ def manage_settings():
             if v and len(v) > 8:
                 keys[k] = v[:4] + '...' + v[-4:]
 
-        active_model = os.environ.get('ACTIVE_MODEL', 'openai')
+        active_model = os.environ.get('ACTIVE_MODEL', 'deepseek')
         return jsonify({"status": "success", "keys": keys, "active_model": active_model})
 
     elif request.method == 'POST':

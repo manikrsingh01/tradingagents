@@ -13,7 +13,7 @@ export default function SettingsPage({ authToken }) {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState(null);
   const [showKeys, setShowKeys] = useState(false);
-  const [activeModel, setActiveModel] = useState('openai');
+  const [activeModel, setActiveModel] = useState('deepseek');
 
   useEffect(() => {
     // Fetch current keys (masked) from backend
