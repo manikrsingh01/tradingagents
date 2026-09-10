@@ -1,7 +1,6 @@
 import json
 import os
 import smtplib
-import threading
 from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -59,8 +58,9 @@ def send_email_report(ticker, date_str, summary_text, master_report_markdown=Non
     smtp_password = os.environ.get("SMTP_PASSWORD")
 
     if not smtp_email or not smtp_password:
-        print("Email credentials not found. Skipping email report.")
-        return
+        msg = f"Email credentials not found in environment (SMTP_EMAIL={'set' if smtp_email else 'missing'}, SMTP_PASSWORD={'set' if smtp_password else 'missing'}). Skipping email report."
+        print(msg)
+        return False, msg
 
     try:
         msg = MIMEMultipart()
@@ -146,9 +146,13 @@ def send_email_report(ticker, date_str, summary_text, master_report_markdown=Non
         server.login(smtp_email, smtp_password)
         server.send_message(msg)
         server.quit()
-        print(f"Successfully sent email report with PDF attachment to hello@manikumarsingh.com for {ticker}")
+        success_msg = f"Successfully sent email report with PDF attachment to hello@manikumarsingh.com for {ticker}"
+        print(success_msg)
+        return True, success_msg
     except Exception as e:
-        print(f"Failed to send email: {e}")
+        err_msg = f"Failed to send email: {e}"
+        print(err_msg)
+        return False, err_msg
 
 
 def require_auth(f):
@@ -428,12 +432,16 @@ def analyze():
             if "trader_investment_plan" in final_state:
                 summary_text = final_state["trader_investment_plan"]
 
-            # Spawn background thread to send email
-            threading.Thread(
-                target=send_email_report,
-                args=(ticker, trade_date, summary_text, master_report_content),
-                daemon=True
-            ).start()
+            # Deliver email report with full PDF attachment
+            yield f"data: {json.dumps({'status': 'log', 'node': 'Email Dispatcher', 'message': 'Generating PDF and sending email to hello@manikumarsingh.com...'})}\n\n"
+            try:
+                ok, email_msg = send_email_report(ticker, trade_date, summary_text, master_report_content)
+                if ok:
+                    yield f"data: {json.dumps({'status': 'log', 'node': 'Email Dispatcher', 'message': 'Email report delivered successfully!'})}\n\n"
+                else:
+                    yield f"data: {json.dumps({'status': 'log', 'node': 'Email Dispatcher', 'message': f'Email skipped or failed: {email_msg}'})}\n\n"
+            except Exception as email_err:
+                yield f"data: {json.dumps({'status': 'log', 'node': 'Email Dispatcher', 'message': f'Email error: {email_err}'})}\n\n"
 
             yield f"data: {json.dumps({'status': 'completed', 'summary': summary_text})}\n\n"
 
