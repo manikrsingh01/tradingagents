@@ -82,9 +82,10 @@ OpenClaw enforces a zero-trust policy for direct messages:
 
 ### Active Model Configuration
 * **Provider:** Google Gemini (`google`)
-* **Model:** `google/gemini-3.6-flash`
+* **Primary Model:** `google/gemini-3.5-flash` (Production tier with high RPM and daily quota)
+* **Automatic Fallbacks:** `google/gemini-3.5-flash-lite`, `google/gemini-3.6-flash`
 * **API Key:** Stored under `auth.profiles["google:manual"]` in `/root/.openclaw/openclaw.json`.
-* *(Note: `gemini-2.5-flash` was deprecated by Google for new users and returns 404; `gemini-3.6-flash` is verified and operational).*
+* *(Note: `gemini-3.6-flash` on free tier is capped by Google to 20 requests/day, which triggered 429 errors. Using `gemini-3.5-flash` as primary eliminates this constraint).*
 
 ### ⚠️ Rate Limits & Thinking Mode (`thinkingDefault: "off"`)
 > [!IMPORTANT]
