@@ -81,10 +81,39 @@ OpenClaw enforces a zero-trust policy for direct messages:
 ## 4. AI Provider & Quota Optimization (Google Gemini)
 
 ### Active Model Configuration
-* **Provider:** Google Gemini (`google`)
-* **Primary Model:** `google/gemini-3.5-flash-lite` (Ultra-fast ~1s latency, maximum Free-Tier burst headroom, prevents 429 burst errors)
-* **Automatic Fallback for Deeper Analysis:** `google/gemini-3.5-flash`
-* **API Key:** Stored under `auth.profiles["google:manual"]` in `/root/.openclaw/openclaw.json`.
+* **Provider:** Groq (`groq`)
+* **Primary Model:** `groq/llama-3.3-70b-versatile`
+  * **Free Limits:** 30 Requests/Min (RPM) & 14,400 Requests/Day (RPD)
+  * **Speed:** ~250+ tokens/second inference
+  * **Rate Limit Immunity:** Does not suffer from Google's 1 QPS burst filter
+* **Automatic Fallback Chain:**
+  1. `google/gemini-3.5-flash-lite`
+  2. `google/gemini-3.5-flash`
+* **Google Web Search Grounding:** Enabled via `plugins.entries.google.config.webSearch` and `tools.web.search` (`provider: gemini`).
+* **Installed System Dependencies:** `yfinance`, `pandas` installed globally on VPS for Python market data tools.
+* **API Keys:** Stored securely in OpenClaw auth database (`openclaw models auth paste-api-key --provider groq`) and injected into `openclaw-gateway.service`.
+
+### ⚠️ Provider Model Registration (`models.providers.groq`)
+> [!IMPORTANT]
+> In OpenClaw, custom/external OpenAI-compatible endpoints like Groq require explicit registration under `models.providers` in `/root/.openclaw/openclaw.json`, otherwise the gateway logs `Unknown model: groq/... Found agents.defaults.models, but no matching models.providers. Add to models.providers to register this provider model` and falls back to Gemini:
+> ```json
+> "models": {
+>     "mode": "merge",
+>     "providers": {
+>         "groq": {
+>             "baseUrl": "https://api.groq.com/openai/v1",
+>             "apiKey": "<GROQ_API_KEY>",
+>             "api": "openai-completions",
+>             "models": [
+>                 {
+>                     "id": "llama-3.3-70b-versatile",
+>                     "name": "llama-3.3-70b-versatile"
+>                 }
+>             ]
+>         }
+>     }
+> }
+> ```
 
 ### ⚠️ Rate Limits & Thinking Mode (`thinkingDefault: "off"`)
 > [!IMPORTANT]
