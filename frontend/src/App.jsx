@@ -189,8 +189,14 @@ function App() {
       });
 
       if (!response.ok) {
-        const errData = await response.json();
-        throw new Error(errData.error || 'Failed to analyze');
+        let errMessage = 'Failed to analyze';
+        try {
+          const errData = await response.json();
+          errMessage = errData.error || errMessage;
+        } catch {
+          errMessage = `Server returned error (${response.status}: ${response.statusText || 'Offline or Connection Lost'})`;
+        }
+        throw new Error(errMessage);
       }
 
       const reader = response.body.getReader();

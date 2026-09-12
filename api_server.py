@@ -1,5 +1,6 @@
 import json
 import os
+import time
 import smtplib
 from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
@@ -25,6 +26,12 @@ CORS(app)
 CANCEL_FLAG = False
 
 PROVIDER_MODEL_MAP = {
+    "omniai": {
+        "provider": "openai_compatible",
+        "quick": "omniai",
+        "deep": "omniai",
+        "backend_url": "http://127.0.0.1:20128/v1"
+    },
     "deepseek": {
         "provider": "deepseek",
         "quick": "deepseek-chat",
@@ -177,6 +184,10 @@ def require_auth(f):
         return f(*args, **kwargs)
     return decorated
 
+@app.route('/api/health', methods=['GET'])
+def health_check():
+    return jsonify({'status': 'healthy', 'service': 'tradingagents', 'timestamp': time.time()})
+
 @app.route('/api/login', methods=['POST'])
 def login():
     data = request.json
@@ -233,10 +244,13 @@ def manage_settings():
                 chosen_model = data['active_model'].strip("'\"").lower()
                 set_key(env_path, 'ACTIVE_MODEL', chosen_model)
                 os.environ['ACTIVE_MODEL'] = chosen_model
-                set_key(env_path, 'TRADINGAGENTS_LLM_PROVIDER', chosen_model)
-                os.environ['TRADINGAGENTS_LLM_PROVIDER'] = chosen_model
                 if chosen_model in PROVIDER_MODEL_MAP:
                     mapping = PROVIDER_MODEL_MAP[chosen_model]
+                    set_key(env_path, 'TRADINGAGENTS_LLM_PROVIDER', mapping['provider'])
+                    os.environ['TRADINGAGENTS_LLM_PROVIDER'] = mapping['provider']
+                    if mapping.get('backend_url'):
+                        set_key(env_path, 'TRADINGAGENTS_LLM_BACKEND_URL', mapping['backend_url'])
+                        os.environ['TRADINGAGENTS_LLM_BACKEND_URL'] = mapping['backend_url']
                     set_key(env_path, 'TRADINGAGENTS_QUICK_THINK_LLM', mapping['quick'])
                     set_key(env_path, 'TRADINGAGENTS_DEEP_THINK_LLM', mapping['deep'])
                     os.environ['TRADINGAGENTS_QUICK_THINK_LLM'] = mapping['quick']
@@ -344,16 +358,19 @@ def analyze():
                 current_analysts.remove('fundamentals')
 
             custom_config = DEFAULT_CONFIG.copy()
-            active_model = os.environ.get('ACTIVE_MODEL', 'deepseek').strip("'\"").lower()
-            custom_config['llm_provider'] = active_model
-            os.environ['TRADINGAGENTS_LLM_PROVIDER'] = active_model
+            active_model = os.environ.get('ACTIVE_MODEL', 'omniai').strip("'\"").lower()
 
             if active_model in PROVIDER_MODEL_MAP:
                 mapping = PROVIDER_MODEL_MAP[active_model]
+                custom_config['llm_provider'] = mapping['provider']
+                os.environ['TRADINGAGENTS_LLM_PROVIDER'] = mapping['provider']
                 custom_config['quick_think_llm'] = mapping['quick']
                 custom_config['deep_think_llm'] = mapping['deep']
                 if mapping.get('backend_url'):
                     custom_config['backend_url'] = mapping['backend_url']
+            else:
+                custom_config['llm_provider'] = active_model
+                os.environ['TRADINGAGENTS_LLM_PROVIDER'] = active_model
 
             if research_depth == 'medium':
                 custom_config['max_debate_rounds'] = 3

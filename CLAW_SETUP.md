@@ -19,36 +19,36 @@
 
 ### Runtime & Paths
 * **OpenClaw Binary:** `/usr/bin/openclaw` (Version `2026.9.3`)
-* **Node.js Runtime:** Node.js `v24.21.0` (Global `/usr/bin/node`)
-* **Configuration File:** `/root/.openclaw/openclaw.json`
+* **Dedicated Unprivileged System User:** `clawbot` (UID 1000, Group `docker`, NO sudo privileges)
+* **Configuration File:** `/home/clawbot/.openclaw/openclaw.json`
 * **Local Gateway Port:** `127.0.0.1:18789` (Loopback only)
-* **Log Files:** `/tmp/openclaw/openclaw-YYYY-MM-DD.log` and systemd journal logs.
+* **Log Files:** `/tmp/openclaw-1000/openclaw-YYYY-MM-DD.log` and systemd journal logs.
 
 ### Systemd Service Definition
-The OpenClaw gateway runs as a user systemd service managed under root:
-* **Service File:** `/root/.config/systemd/user/openclaw-gateway.service`
+The OpenClaw gateway runs as a user systemd service managed under the isolated `clawbot` user:
+* **Service File:** `/home/clawbot/.config/systemd/user/openclaw-gateway.service`
 * **Service Name:** `openclaw-gateway.service`
 
 ```bash
-# Check service status
-systemctl --user status openclaw-gateway.service
+# Check service status from root
+systemctl --user -M clawbot@ status openclaw-gateway.service
 
-# Restart gateway
-systemctl --user restart openclaw-gateway.service
+# Restart gateway from root
+systemctl --user -M clawbot@ restart openclaw-gateway.service
 
 # Inspect live journal logs
-journalctl --user -u openclaw-gateway.service -f
+journalctl _SYSTEMD_USER_UNIT=openclaw-gateway.service -f
 ```
 
 ### ⚠️ CRITICAL PITFALL: User Lingering (`loginctl enable-linger`)
 > [!CAUTION]
 > In Ubuntu / systemd, user-level services (`systemctl --user`) are **automatically killed with SIGTERM** the moment an SSH session logs out unless user lingering is enabled.
 > 
-> Lingering was explicitly enabled on the server:
+> Lingering is explicitly enabled for `clawbot`:
 > ```bash
-> loginctl enable-linger root
+> loginctl enable-linger clawbot
 > ```
-> Verify anytime: `loginctl show-user root | grep Linger` (Must return `Linger=yes`). If the server is rebuilt or user changed, **always verify linger is enabled**, otherwise OpenClaw will die when you disconnect from SSH!
+> Verify anytime: `loginctl show-user clawbot | grep Linger` (Must return `Linger=yes`). If the server is rebuilt or user changed, **always verify linger is enabled**, otherwise OpenClaw will die when you disconnect from SSH!
 
 ---
 
@@ -82,10 +82,10 @@ OpenClaw enforces a zero-trust policy for direct messages:
 
 ### Active Model Configuration
 * **Provider:** Groq (`groq`)
-* **Primary Model:** `groq/llama-3.3-70b-versatile`
-  * **Free Limits:** 30 Requests/Min (RPM) & 14,400 Requests/Day (RPD)
-  * **Speed:** ~250+ tokens/second inference
-  * **Rate Limit Immunity:** Does not suffer from Google's 1 QPS burst filter
+* **Primary Model:** `groq/openai/gpt-oss-120b` (and `groq/qwen/qwen3.8-27b`)
+  * **Free Limits:** High rate limits & blazing fast inference (~0.09s response time)
+  * **Architecture:** 120B parameter state-of-the-art open model hosted on Groq LPU
+  * **Rate Limit Immunity:** Eliminates Google AI Studio's 1 QPS burst filter
 * **Automatic Fallback Chain:**
   1. `google/gemini-3.5-flash-lite`
   2. `google/gemini-3.5-flash`
@@ -154,15 +154,36 @@ OpenClaw enforces a zero-trust policy for direct messages:
 
 | Task | Command on VPS |
 | :--- | :--- |
-| **Check Gateway Status** | `systemctl --user status openclaw-gateway.service` |
-| **Restart Gateway** | `systemctl --user restart openclaw-gateway.service` |
-| **View Live Telegram Logs** | `journalctl --user -u openclaw-gateway.service -f` |
-| **Check Model & Gateway Startup** | `journalctl --user -u openclaw-gateway.service -n 30 --no-pager` |
-| **List Pending Telegram Pairings** | `openclaw pairing list` |
-| **Approve Telegram User** | `openclaw pairing approve telegram <CODE>` |
-| **List Supported Models** | `openclaw models list` |
-| **Run OpenClaw Doctor** | `openclaw doctor` |
-| **Verify Root Lingering** | `loginctl show-user root \| grep Linger` |
+| **Check Gateway Status** | `systemctl --user -M clawbot@ status openclaw-gateway.service` |
+| **Restart Gateway** | `systemctl --user -M clawbot@ restart openclaw-gateway.service` |
+| **View Live Telegram Logs** | `journalctl _SYSTEMD_USER_UNIT=openclaw-gateway.service -f` |
+| **Check Recent Gateway Startup Logs** | `journalctl _SYSTEMD_USER_UNIT=openclaw-gateway.service -n 50 --no-pager` |
+| **Fix "Typing..." Hang (Compact Session)** | `su - clawbot -c "openclaw sessions compact"` |
+| **List Active Sessions** | `su - clawbot -c "openclaw sessions list"` |
+| **List Pending Telegram Pairings** | `su - clawbot -c "openclaw pairing list"` |
+| **Approve Telegram User** | `su - clawbot -c "openclaw pairing approve telegram <CODE>"` |
+| **List Supported Models** | `su - clawbot -c "openclaw models list"` |
+| **Run OpenClaw Doctor** | `su - clawbot -c "openclaw doctor"` |
+| **Verify Clawbot Lingering** | `loginctl show-user clawbot \| grep Linger` |
+
+---
+
+### ⚠️ Troubleshooting: Indefinite "Typing..." in Telegram (Session Context Bloat)
+
+**Problem:**
+You send a message to `@manik_assistant_bot` on Telegram. The bot displays "typing..." continuously and never sends a reply.
+
+**Root Cause:**
+OpenClaw records every message, prompt, and tool execution into a persistent session file. Over time, this history reaches **40,000 to 50,000+ tokens**. When a new message arrives, OpenClaw submits the entire monolithic history to the upstream LLM (Gemini 3.6 Flash / Groq). The LLM either times out, exceeds input token limits, or crashes silently in the streaming loop.
+
+**Instant Fix:**
+Run session compaction as the `clawbot` user:
+```bash
+# As root on VPS:
+su - clawbot -c "openclaw sessions compact"
+systemctl --user -M clawbot@ restart openclaw-gateway.service
+```
+This summarizes earlier turns and reduces context payload by 95%+, restoring immediate sub-second replies.
 
 ---
 

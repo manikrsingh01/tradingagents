@@ -250,6 +250,10 @@ def load_ohlcv(symbol: str, curr_date: str) -> pd.DataFrame:
     # Filter to curr_date to prevent look-ahead bias in backtesting.
     data = data[data["Date"] <= curr_date_dt]
 
+    # Trim trailing placeholder rows where Yahoo Finance returned an unpopulated bar (e.g. weekend or unsettled day with all-NaN prices)
+    while not data.empty and pd.isna(data["Close"].iloc[-1]) and pd.isna(data["Open"].iloc[-1]):
+        data = data.iloc[:-1]
+
     # Guard the latest in-range bar before dropping incomplete rows: a newest bar
     # with no close is "not settled yet", not "does not exist". Silently dropping
     # it would make the previous trading day look like the latest (#1201); raise

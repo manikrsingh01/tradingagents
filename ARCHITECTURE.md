@@ -159,6 +159,63 @@ ssh root@2.28.118.15 "cd /var/www/tradingagents && ./venv/bin/python test_email.
   * 24/7 personal conversational operator
   * Autonomous shell command & script execution inside Docker sandbox
   * Web search & live market summarization
-  * Managed via systemd: `systemctl --user status openclaw-gateway.service`
+  * Managed via systemd: `systemctl --user -M clawbot@ status openclaw-gateway.service`
   * Quota optimization: `thinkingDefault: "off"` on Gemini 3.6 Flash (single-turn chat, multi-call on demand for tools)
+
+---
+
+## 8. OmniRoute Unified AI Gateway (OmniAI)
+
+* **Gateway Container:** Docker container `omniroute` on Hetzner VPS (`2.28.118.15`)
+* **Port Binding:** `127.0.0.1:20128` (Local loopback on VPS, tunneled or bridged to clients)
+* **Virtual Combo Model:** `omniai`
+* **Endpoint:** `http://127.0.0.1:20128/v1`
+* **Authorization Token:** `omniroute-master-key-2026`
+* **Provider Routing Priority Chain:**
+  1. **Google Gemini (`gemini`):** `gemini/gemini-3.6-flash`, `gemini/gemini-3.1-pro-preview` *(Note: `gemini-2.5-flash` and `gemini-2.5-pro` are officially retired/deprecated by Google returning HTTP 404)*.
+  2. **Groq LPU (`groq`):** `groq/llama-3.3-70b-versatile`, `groq/qwen/qwen3.8-27b` — ultra-fast sub-second latency.
+  3. **OpenRouter (`openrouter`):** Configured with free-tier fallback models (`:free`) using key `sk-or-v1-...`.
+* **⚠️ STRICT POLICY: DeepSeek Exclusion:**
+  * By user instruction, DeepSeek is **strictly excluded** from the OmniRoute gateway pool. Never add DeepSeek API keys into OmniRoute DB or `omniai` routing combo without explicit user consent.
+
+---
+
+## 9. Critical Operational Bugfixes & Engineering Knowledge
+
+### 1. Market Data Truncation Bug (`stockstats_utils.py`)
+* **Symptom:** `No market data for '<SYMBOL>.NS': latest in-range OHLCV bar has no closing price`
+* **Root Cause:** Indian NSE tickers (e.g. `NESTLEIND.NS`, `PINELABS.NS`) returned by Yahoo Finance frequently contain an unpopulated placeholder bar for the current trading session where `Close`, `Open`, `High`, `Low` are `NaN` or empty strings.
+* **Fix Applied:** In `tradingagents/dataflows/stockstats_utils.py`, implemented automatic backward scanning to pop trailing rows with `NaN` close prices before computing indicators.
+
+### 2. Frontend Stream Crash (`frontend/src/App.jsx`)
+* **Symptom:** `Failed to execute 'json' on 'Response': Unexpected end of JSON input`
+* **Root Cause:** If an SSE connection drops or the server returns an empty or raw error body, calling `await response.json()` threw an unhandled JSON parsing exception in React.
+* **Fix Applied:** Wrapped response body parsing with `response.text()` fallback and checked `response.ok` to cleanly display HTTP status messages.
+
+### 3. Rate Limit Stalls & Groq 7,000 ITPM Ceiling
+* **Symptom:** Multi-agent debate hangs at `29% Complete` on `[tools_market]`.
+* **Root Cause:** In TradingAgents, multi-agent debate rounds concatenate full analyst messages, ballooning prompt size to **9,600+ tokens**.
+  * Groq Free Tier enforces a strict **7,000 Input Tokens Per Minute (ITPM)** limit, returning `[413]: Request too large (Limit 7000, Requested 9613)`.
+  * Google Gemini Free Tier hits 15 RPM / quota exhaustion (`429: rate_limited`).
+  * When all providers hit limits simultaneously, OmniRoute returns `503` or `413`, causing TradingAgents to wait in 30-second exponential backoff loops.
+* **Resolution Rule:** Keep debate rounds to `shallow` or summarize conversation history so prompt tokens remain < 6,000.
+
+### 4. Telegram Bot "Typing..." Indefinite Freeze
+* **Symptom:** `@manik_assistant_bot` shows "typing..." status in Telegram but never replies.
+* **Root Cause:** Session context bloat. The conversational history JSON on the VPS accumulated 50,000+ tokens. When OpenClaw sent this massive payload to Gemini/Groq, the API timed out or exceeded max context.
+* **Fix Command:** Run `openclaw sessions compact` on the VPS to summarize and compress the active session history back down to under 1,000 tokens.
+
+---
+
+## 10. Service Ports Quick Reference
+
+| Port | Service | Process / Container | Binding |
+| :--- | :--- | :--- | :--- |
+| **80 / 443** | Nginx Reverse Proxy | `nginx` systemd | `0.0.0.0` (Public) |
+| **5001** | TradingAgents Backend API | `api_server.py` (Gunicorn/Flask) | `127.0.0.1` |
+| **8001** | Server-Personal Ops Backend | FastAPI (`uvicorn app:app`) | `127.0.0.1` |
+| **5180** | Server-Personal Ops Frontend | Vite / React | `127.0.0.1` |
+| **18789** | OpenClaw Gateway | Node.js (`clawbot` user) | `127.0.0.1` |
+| **20128** | OmniRoute AI Gateway | Docker `omniroute` | `127.0.0.1` |
+
 

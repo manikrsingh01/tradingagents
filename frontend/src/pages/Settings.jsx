@@ -97,10 +97,11 @@ export default function SettingsPage({ authToken }) {
             value={activeModel}
             onChange={(e) => setActiveModel(e.target.value)}
           >
+            <option value="omniai">⚡ OmniAI (Intelligent Auto-Fallback Router)</option>
+            <option value="deepseek">DeepSeek (V3)</option>
             <option value="openai">OpenAI (GPT-4)</option>
             <option value="anthropic">Anthropic (Claude 3.5)</option>
             <option value="groq">Groq (Llama 3)</option>
-            <option value="deepseek">DeepSeek (V3)</option>
             <option value="gemini">Google Gemini</option>
           </select>
         </div>
