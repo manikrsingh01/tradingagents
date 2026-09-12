@@ -108,18 +108,19 @@ def _is_rate_limit_error(exc: Exception) -> bool:
     ))
 
 
-def _get_retry_delay(exc: Exception) -> float:
-    """Parse the retry delay from any provider's error, or return a default."""
+def _get_retry_delay(exc: Exception, attempt: int = 0) -> float:
+    """Parse the retry delay from any provider's error, or return an exponential backoff."""
     delay = _parse_google_retry_delay(exc)
     if delay is not None:
-        return delay
+        return min(delay, 20.0)
 
     delay = _parse_openai_retry_delay(exc)
     if delay is not None:
-        return delay
+        return min(delay, 20.0)
 
-    # Fallback: 30 seconds (safe default for most providers)
-    return 30.0
+    # Fast exponential backoff (e.g. 2s, 3.2s, 5.1s, 8.2s, max 12s)
+    # Replaces static 30s delays that cause process hangs
+    return min(2.0 * (1.6 ** attempt), 12.0)
 
 
 # ---------------------------------------------------------------------------
@@ -128,8 +129,8 @@ def _get_retry_delay(exc: Exception) -> float:
 
 def rate_limit_retry(
     func: Callable[..., T],
-    max_retries: int = 30,
-    max_total_wait: float = 600.0,  # 10 minutes total max wait
+    max_retries: int = 6,
+    max_total_wait: float = 120.0,  # 2 minutes max wait
 ) -> Callable[..., T]:
     """Wrap an LLM ``invoke()``-like function with rate-limit-aware retrying.
 
@@ -163,7 +164,7 @@ def rate_limit_retry(
                     )
                     raise
 
-                delay = _get_retry_delay(exc)
+                delay = _get_retry_delay(exc, attempt=attempt)
                 # Add small jitter (±10%) to avoid thundering herd
                 jitter = delay * 0.1 * (random.random() * 2 - 1)
                 delay = max(1.0, delay + jitter)

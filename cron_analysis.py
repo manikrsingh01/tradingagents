@@ -50,15 +50,18 @@ def run_morning_analysis(ticker: str = "^NSEI"):
     # Set up model configuration
     custom_config = DEFAULT_CONFIG.copy()
     active_model = os.environ.get("ACTIVE_MODEL", "deepseek").strip("'\"").lower()
-    custom_config["llm_provider"] = active_model
-    os.environ["TRADINGAGENTS_LLM_PROVIDER"] = active_model
 
     if active_model in PROVIDER_MODEL_MAP:
         mapping = PROVIDER_MODEL_MAP[active_model]
+        custom_config["llm_provider"] = mapping["provider"]
+        os.environ["TRADINGAGENTS_LLM_PROVIDER"] = mapping["provider"]
         custom_config["quick_think_llm"] = mapping["quick"]
         custom_config["deep_think_llm"] = mapping["deep"]
         if mapping.get("backend_url"):
             custom_config["backend_url"] = mapping["backend_url"]
+    else:
+        custom_config["llm_provider"] = active_model
+        os.environ["TRADINGAGENTS_LLM_PROVIDER"] = active_model
 
     custom_config["max_debate_rounds"] = 1
     custom_config["max_risk_discuss_rounds"] = 1

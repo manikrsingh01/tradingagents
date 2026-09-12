@@ -35,8 +35,14 @@ PROVIDER_MODEL_MAP = {
     "deepseek": {
         "provider": "deepseek",
         "quick": "deepseek-chat",
-        "deep": "deepseek-reasoner",
+        "deep": "deepseek-chat",
         "backend_url": "https://api.deepseek.com"
+    },
+    "groq": {
+        "provider": "groq",
+        "quick": "llama-3.3-70b-versatile",
+        "deep": "llama-3.3-70b-versatile",
+        "backend_url": "https://api.groq.com/openai/v1"
     },
     "openai": {
         "provider": "openai",
@@ -399,6 +405,8 @@ def analyze():
             args["stream_mode"] = "updates"
 
             yield f"data: {json.dumps({'status': 'started', 'ticker': ticker, 'date': trade_date})}\n\n"
+            if current_analysts:
+                yield f"data: {json.dumps({'status': 'node_started', 'node': current_analysts[0]})}\n\n"
 
             final_state = init_agent_state.copy()
 
